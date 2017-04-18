@@ -215,7 +215,7 @@ function list_source_dirs {
       if [ "x${DRY_RUN}" != "x" ] ; then
          echo "Executing Dry Run: ${RSYNC} -xavP ${RESTORE_FQPN} ${TARGET} this may take a while."
          echo "Pressing CTRL-C will terminate the dry-run and continue with the restore process."
-         echo "You can press CTRL-Z to suspend the restore process and look at the log file.  When"
+         echo "Or, you can press CTRL-Z to suspend the restore process and look at the log file.  When"
          echo "ready to proceed, type fg<ENTER> to return to the restore."
          printf "Dry Run Log: %s\n" ${LOGFILE}
          ${RSYNC} -xavP ${DRY_RUN} ${RESTORE_FQPN} ${TARGET} &>${LOGFILE}
@@ -237,10 +237,17 @@ function list_source_dirs {
       echo Executing: ${RSYNC} -xavP ${RESTORE_FQPN} ${TARGET}
       printf "Restore Log: %s\n" ${LOGFILE}
       echo " Restore Started: "`date`
-      if [ ${VERBOSE} -eq 1 ] ; then     
-         ${RSYNC} -xavP ${RESTORE_FQPN} ${TARGET} | tee ${LOGFILE}
+
+      if [[ -d ${TARGET} ]] ; then
+         END_SLASH=""
       else
-         ${RSYNC} -xavP ${RESTORE_FQPN} ${TARGET} &>${LOGFILE}
+         END_SLASH="/"
+      fi
+
+      if [ ${VERBOSE} -eq 1 ] ; then     
+         ${RSYNC} -xavP ${RESTORE_FQPN}${END_SLASH} ${TARGET} | tee ${LOGFILE}
+      else
+         ${RSYNC} -xavP ${RESTORE_FQPN}${END_SLASH} ${TARGET} &>${LOGFILE}
       fi
       echo "Restore Finished: "`date`
    fi
