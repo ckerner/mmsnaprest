@@ -177,15 +177,16 @@ function list_source_dirs {
    fi
 
    SNAP_COUNT=`ls ${DIR_DIR}/.snapshots/ 2>/dev/null | wc -l`
-   if [ ${SNAP_COUNT} -eq 0 ] ; then
-      echo "There are no snapshots for ${MYFILE}"
-      exit 2
-   fi
 
    printf " Source Directory: %s\n" ${BASE_FILE}
    printf "  Source Pathname: %s\n" ${DIR_DIR}
    printf "      Target Name: %s\n" ${TARGET}
    printf "Snapshot Versions: %s\n" ${SNAP_COUNT}
+   if [ ${SNAP_COUNT} -eq 0 ] ; then
+      echo " "
+      echo "There are no snapshots for ${MYFILE}"
+      exit 2
+   fi
    for SNAPDIR in `ls ${DIR_DIR}/.snapshots/`
        do ls -lid ${DIR_DIR}/.snapshots/${SNAPDIR}/${BASE_FILE} 2>/dev/null
    done
