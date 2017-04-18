@@ -1,0 +1,276 @@
+#!/bin/bash
+
+# Program Initialization
+{
+   PROGNAME=`basename $0`
+   PID=$$
+   DATE=`date +"%Y%m%d_%H%M%S"`
+   LOGFILE="/tmp/restore.$USER.${DATE}.log"
+   DEFAULT_DEBUG=0
+   DEFAULT_VERBOSE=0
+   RSYNC=`which rsync 2>/dev/null`
+
+   if [ "x${RSYNC}" == "x" ] ; then
+      echo "ERROR: rsync is not installed."
+      exit 100
+   fi
+}
+
+
+function print_help {
+   cat <<EOHELP
+
+   GPFS Restore From Snapshot 
+
+   Please note: This utility uses rsync style processing for directories.  If
+                you are unsure of how that matching works, you may want to play
+                with it in a test area.  There are examples in the EXAMPLES 
+                section of this help screen.
+
+   Usage: ${PROGNAME} [-D|--debug]  [-u|--usage]  [-v|--verbose]  [-h|--help]  
+                      [--dry-run] [-ls SOURGE]   [-s SOURCE  -t TARGET]
+
+   Option        Description
+   -ls SOURCE    Just list all of the snapshot versions of a file/directory.
+
+   -s SOURCE     Specify the source file/directory for the restore.  You will be
+                 prompted for the version you wish to restore from.
+
+   -t TARGET     Specify the target location for the restore.  If not specified, 
+                 you will be prompted for it.
+  
+                 TARGET is unique.  If you are restoring a file, you can specify
+                 a directory to restore the file to, keeping its original name.  
+                 Or you can restore to a file name, either creating or overwriting
+                 the original file.
+
+   --dry-run     Generate a log of what would have been done, but don't do it.
+
+   -v|--verbose  Show the rsync restore output on the terminal as well as logging it.
+
+   -D|--debug    Turn on debugging.  This is very verbose.
+
+   -h|--help     Print this help screen.
+
+   Examples:
+EOHELP
+}
+
+
+function print_usage {
+   cat <<EOUSAG
+   Usage: ${PROGNAME} [-D|--debug]  [-h|--help]  [--dry-run]  -s SOURGE  -t TARGET
+EOUSAG
+}
+
+
+function validate_options {
+   [[ ${DEBUG:=$DEFAULT_DEBUG} ]]
+   [[ ${VERBOSE:=$DEFAULT_VERBOSE} ]]
+ 
+   if [ "x${SOURCE}" == "x" ] ; then
+      echo "ERROR: You must specify a source"
+      exit 1
+   fi
+}
+
+
+function process_options {
+   while [ $# -gt 0 ] 
+      do case $1 in
+         -D|--debug)     DEBUG=1 ;;
+         -h|--help)      print_help; exit 0 ;;
+         -u|--usage)     print_usage; exit 0 ;;
+         -v|--verbose)   VERBOSE=1 ;;
+         -s)             SOURCE=$2; shift ;;
+         -ls)            SOURCE=$2; OPTCMD='ls'; shift ;;
+         -t)             TARGET=$2; shift ;;
+         --dry-run)      DRY_RUN="--dry-run" ;;
+      esac
+      shift
+   done
+}
+
+function restore_file {
+   MYFILE=$1
+   FILE_DIR=`dirname ${MYFILE}`
+   BASE_FILE=`basename ${MYFILE}`
+  
+   if [ "${FILE_DIR}" == "." ] ; then
+      FILE_DIR=$PWD
+   fi
+
+   SNAP_COUNT=`ls ${FILE_DIR}/.snapshots/*/${BASE_FILE} 2>/dev/null | wc -l`
+   if [ ${SNAP_COUNT} -eq 0 ] ; then
+      echo "There are no snapshots for ${MYFILE}"
+      exit 2
+   fi
+
+   printf "  Source Filename: %s\n" ${BASE_FILE}
+   printf " Source Directory: %s\n" ${FILE_DIR}
+   printf "      Target Name: %s\n" ${TARGET}
+   printf "Snapshot Versions: %s\n" ${SNAP_COUNT}
+   for SNAPDIR in `ls ${FILE_DIR}/.snapshots/`
+       do ls -li ${FILE_DIR}/.snapshots/${SNAPDIR}/${BASE_FILE} 2>/dev/null
+   done
+
+   # OK, we are not just listing the files, do a restore
+   if [ "x${OPTCMD}" == "x" ] ; then
+      while [[ ! -f ${RESTORE_FQPN} ]] ; do
+         printf "Select File: "
+         read RESTORE_FQPN
+         if [[ ! -f ${RESTORE_FQPN} ]] ; then
+            echo "ERROR: ${RESTORE_FQPN} is not a file"
+         fi
+      done
+    
+      if [ "x${TARGET}" == "x" ] ; then
+         VALID_TARGET=0
+         while [ $VALID_TARGET -eq 0 ] ; do
+            printf "\nSpecify Target: "
+            read TARGET_FQPN
+            DTFQPN=`dirname ${TARGET_FQPN}`
+            if [[ -d ${DTFQPN} ]] ; then
+               VALID_TARGET=1
+            fi
+         done
+         TARGET=${TARGET_FQPN}
+      fi 
+
+      if [ "x${DRY_RUN}" != "x" ] ; then
+         echo Executing Dry Run: ${RSYNC} -xavP ${RESTORE_FQPN} ${TARGET}
+         printf "Dry Run Log"
+         ${RSYNC} -xavP ${DRY_RUN} ${RESTORE_FQPN} ${TARGET}
+         CONT=0
+         while [ $CONT -eq 0 ] ; do
+            printf "\n"
+            echo Executing: ${RSYNC} -xavP ${RESTORE_FQPN} ${TARGET}
+            printf "Execute For Real [y/n]:"
+            read DOE
+            case $DOE in
+               y|Y)   CONT=1 ;;
+               n|N)   exit 2 ;;
+               *)     CONT=0 ;;
+            esac
+         done
+
+      fi       
+
+      echo Executing: ${RSYNC} -xavP ${RESTORE_FQPN} ${TARGET} 
+      if [ ${VERBOSE} -eq 1 ] ; then
+         ${RSYNC} -xavP ${RESTORE_FQPN} ${TARGET} | tee ${LOGFILE}
+      else
+         ${RSYNC} -xavP ${RESTORE_FQPN} ${TARGET} &>${LOGFILE}
+      fi
+   fi
+}
+
+function list_source_dirs {
+   MYFILE=$1
+   DIR_DIR=`dirname ${MYFILE}`
+   BASE_FILE=`basename ${MYFILE}`
+
+   if [ "${DIR_DIR}" == "." ] ; then
+      DIR_DIR=`dirname $PWD`
+      BASE_FILE=`basename $PWD`
+   fi
+
+   SNAP_COUNT=`ls ${DIR_DIR}/.snapshots/ 2>/dev/null | wc -l`
+   if [ ${SNAP_COUNT} -eq 0 ] ; then
+      echo "There are no snapshots for ${MYFILE}"
+      exit 2
+   fi
+
+   printf " Source Directory: %s\n" ${BASE_FILE}
+   printf "  Source Pathname: %s\n" ${DIR_DIR}
+   printf "      Target Name: %s\n" ${TARGET}
+   printf "Snapshot Versions: %s\n" ${SNAP_COUNT}
+   for SNAPDIR in `ls ${DIR_DIR}/.snapshots/`
+       do ls -lid ${DIR_DIR}/.snapshots/${SNAPDIR}/${BASE_FILE} 2>/dev/null
+   done
+
+   # OK, we are not just listing the files, do a restore
+   if [ "x${OPTCMD}" == "x" ] ; then
+      while [[ ! -d ${RESTORE_FQPN} ]] ; do
+         printf "Select Directory: "
+         read RESTORE_FQPN
+         if [[ ! -d ${RESTORE_FQPN} ]] ; then
+            echo "ERROR: ${RESTORE_FQPN} is not a directory"
+         fi
+      done
+
+      if [ "x${TARGET}" == "x" ] ; then
+         VALID_TARGET=0
+         while [ $VALID_TARGET -eq 0 ] ; do
+            printf "\nSpecify Target: "
+            read TARGET_FQPN
+            DTFQPN=`dirname ${TARGET_FQPN}`
+            if [[ -d ${DTFQPN} ]] ; then
+               VALID_TARGET=1
+            fi
+         done
+         TARGET=${TARGET_FQPN}
+      fi
+
+      if [ "x${DRY_RUN}" != "x" ] ; then
+         echo "Executing Dry Run: ${RSYNC} -xavP ${RESTORE_FQPN} ${TARGET} this may take a while."
+         echo "Pressing CTRL-C will terminate the dry-run and continue with the restore process."
+         echo "You can press CTRL-Z to suspend the restore process and look at the log file.  When"
+         echo "ready to proceed, type fg<ENTER> to return to the restore."
+         printf "Dry Run Log: %s\n" ${LOGFILE}
+         ${RSYNC} -xavP ${DRY_RUN} ${RESTORE_FQPN} ${TARGET} &>${LOGFILE}
+         CONT=0
+         while [ $CONT -eq 0 ] ; do
+            printf "\n"
+            echo Executing: ${RSYNC} -xavP ${RESTORE_FQPN} ${TARGET}
+            printf "Execute For Real [y/n]:"
+            read DOE
+            case $DOE in
+               y|Y)   CONT=1 ;;
+               n|N)   exit 2 ;;
+               *)     CONT=0 ;;
+            esac
+         done
+         printf "\n\n\n" >>${LOGFILE}
+      fi
+
+      echo Executing: ${RSYNC} -xavP ${RESTORE_FQPN} ${TARGET}
+      printf "Restore Log: %s\n" ${LOGFILE}
+      echo " Restore Started: "`date`
+      if [ ${VERBOSE} -eq 1 ] ; then     
+         ${RSYNC} -xavP ${RESTORE_FQPN} ${TARGET} | tee ${LOGFILE}
+      else
+         ${RSYNC} -xavP ${RESTORE_FQPN} ${TARGET} &>${LOGFILE}
+      fi
+      echo "Restore Finished: "`date`
+   fi
+   
+}
+
+function list_source {
+   SOURCE=$1
+   if [[ -f ${SOURCE} ]] ; then
+      restore_file ${SOURCE}
+   elif [[ -d ${SOURCE} ]] ; then
+      list_source_dirs ${SOURCE}
+   else
+      echo "ERROR: ${SOURCE} either does not exist or is not a file or directory."
+      exit 1
+   fi
+}
+
+# Main Code Block
+{
+   process_options $*
+
+   validate_options
+
+   # Turn on debugging if specified
+   if [ ${DEBUG} -eq 1 ] ; then
+      set -x
+   fi
+
+   list_source ${SOURCE}
+
+}
+
