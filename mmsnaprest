@@ -101,15 +101,16 @@ function restore_file {
    fi
 
    SNAP_COUNT=`ls ${FILE_DIR}/.snapshots/*/${BASE_FILE} 2>/dev/null | wc -l`
-   if [ ${SNAP_COUNT} -eq 0 ] ; then
-      echo "There are no snapshots for ${MYFILE}"
-      exit 2
-   fi
 
    printf "  Source Filename: %s\n" ${BASE_FILE}
    printf " Source Directory: %s\n" ${FILE_DIR}
    printf "      Target Name: %s\n" ${TARGET}
    printf "Snapshot Versions: %s\n" ${SNAP_COUNT}
+   if [ ${SNAP_COUNT} -eq 0 ] ; then
+      echo " "
+      echo "ERROR: There are no snapshots for ${MYFILE}"
+      exit 2
+   fi
    for SNAPDIR in `ls ${FILE_DIR}/.snapshots/`
        do ls -li ${FILE_DIR}/.snapshots/${SNAPDIR}/${BASE_FILE} 2>/dev/null
    done
